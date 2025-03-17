@@ -188,11 +188,14 @@ export default function App() {
       onPanResponderMove: (_, gestureState) => {
         if (!isPointerLocked.current) return;
         
-        // Horizontal rotation (left/right)
+        // Horizontal rotation (left/right) - Y axis
         playerRotation.y -= gestureState.dx * ROTATION_SPEED;
         
-        // Vertical rotation (up/down)
+        // Vertical rotation (up/down) - X axis
         playerRotation.x -= gestureState.dy * ROTATION_SPEED;
+        
+        // Lock Z axis (roll) to 0
+        playerRotation.z = 0;
         
         // Limit vertical rotation to prevent over-rotation
         playerRotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, playerRotation.x));
@@ -216,7 +219,7 @@ export default function App() {
     
     direction.normalize();
     
-    // Apply rotation to movement direction
+    // Apply rotation to movement direction (only Y axis for horizontal movement)
     const rotationMatrix = new Euler(0, playerRotation.y, 0);
     direction.applyEuler(rotationMatrix);
     
@@ -228,9 +231,9 @@ export default function App() {
     // Update position
     playerPosition.add(direction.multiplyScalar(MOVEMENT_SPEED));
     
-    // Update camera position and rotation
+    // Update camera position and rotation, ensuring Z rotation is locked
     camera.position.copy(playerPosition);
-    camera.rotation.copy(playerRotation);
+    camera.rotation.set(playerRotation.x, playerRotation.y, 0);
   };
 
   const handleTouch = (event: any) => {
