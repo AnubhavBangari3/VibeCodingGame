@@ -1,0 +1,31 @@
+{
+  "name": "game3d",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~4.0.1",
+    "@react-three/fiber": "^8.13.2",
+    "@types/three": "^0.174.0",
+    "expo": "~52.0.38",
+    "expo-gl": "~15.0.4",
+    "expo-status-bar": "~2.0.1",
+    "expo-three": "^2.2.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-native": "0.76.7",
+    "react-native-web": "~0.19.13",
+    "three": "^0.174.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@types/react": "~18.3.12",
+    "typescript": "^5.3.3"
+  },
+  "private": true
+}
