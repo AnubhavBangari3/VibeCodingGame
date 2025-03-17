@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { ExpoWebGLRenderingContext, GLView } from 'expo-gl';
-import { Scene, PerspectiveCamera, BoxGeometry, MeshStandardMaterial, Mesh, AmbientLight, DirectionalLight, WebGLRenderer, Vector3, Vector2, Raycaster, Euler } from 'three';
+import { Scene, PerspectiveCamera, BoxGeometry, MeshStandardMaterial, Mesh, AmbientLight, DirectionalLight, WebGLRenderer, Vector3, Vector2, Raycaster, Euler, Color, Fog } from 'three';
 import { View, StyleSheet, Dimensions, PanResponder, Animated } from 'react-native';
 
 // Block types
@@ -22,10 +22,18 @@ const BLOCK_COLORS = {
 // Movement speed
 const MOVEMENT_SPEED = 0.015;
 const ROTATION_SPEED = 0.002;
+const HEAD_BOB_AMPLITUDE = 0.05;
+const HEAD_BOB_FREQUENCY = 0.1;
 
 const JOYSTICK_SIZE = 100;
 const JOYSTICK_BASE_COLOR = 'rgba(255, 255, 255, 0.3)';
 const JOYSTICK_STICK_COLOR = 'rgba(255, 255, 255, 0.5)';
+
+// Sky colors
+const SKY_COLORS = {
+  TOP: 0x87CEEB,    // Sky blue
+  BOTTOM: 0xE0F6FF, // Light blue
+};
 
 interface JoystickProps {
   onMove: (x: number, y: number) => void;
@@ -34,6 +42,7 @@ interface JoystickProps {
 const VirtualJoystick: React.FC<JoystickProps> = ({ onMove }) => {
   const pan = React.useRef(new Animated.ValueXY()).current;
   const [stickPosition, setStickPosition] = React.useState({ x: 0, y: 0 });
+  const lastMoveTime = React.useRef(Date.now());
 
   const panResponder = React.useRef(
     PanResponder.create({
@@ -45,6 +54,7 @@ const VirtualJoystick: React.FC<JoystickProps> = ({ onMove }) => {
           y: stickPosition.y,
         });
         pan.setValue({ x: 0, y: 0 });
+        lastMoveTime.current = Date.now();
       },
       onPanResponderMove: Animated.event(
         [null, { dx: pan.x, dy: pan.y }],
@@ -56,23 +66,37 @@ const VirtualJoystick: React.FC<JoystickProps> = ({ onMove }) => {
         setStickPosition({ x: 0, y: 0 });
         onMove(0, 0);
       },
+      onPanResponderTerminate: () => {
+        pan.flattenOffset();
+        pan.setValue({ x: 0, y: 0 });
+        setStickPosition({ x: 0, y: 0 });
+        onMove(0, 0);
+      },
     })
   ).current;
 
   React.useEffect(() => {
     const listener = pan.addListener((value) => {
-      const distance = Math.min(JOYSTICK_SIZE / 2, Math.sqrt(value.x * value.x + value.y * value.y));
-      const angle = Math.atan2(value.y, value.x);
-      const newPosition = {
-        x: distance * Math.cos(angle),
-        y: distance * Math.sin(angle),
-      };
-      setStickPosition(newPosition);
+      const currentTime = Date.now();
+      const timeDiff = currentTime - lastMoveTime.current;
       
-      // Normalize the values for movement
-      const normalizedX = value.x / (JOYSTICK_SIZE / 2);
-      const normalizedY = value.y / (JOYSTICK_SIZE / 2);
-      onMove(normalizedX, normalizedY);
+      // Only update if enough time has passed (throttle updates)
+      if (timeDiff >= 16) { // ~60fps
+        const distance = Math.min(JOYSTICK_SIZE / 2, Math.sqrt(value.x * value.x + value.y * value.y));
+        const angle = Math.atan2(value.y, value.x);
+        const newPosition = {
+          x: distance * Math.cos(angle),
+          y: distance * Math.sin(angle),
+        };
+        setStickPosition(newPosition);
+        
+        // Normalize the values for movement
+        const normalizedX = value.x / (JOYSTICK_SIZE / 2);
+        const normalizedY = value.y / (JOYSTICK_SIZE / 2);
+        onMove(normalizedX, normalizedY);
+        
+        lastMoveTime.current = currentTime;
+      }
     });
 
     return () => {
@@ -116,6 +140,8 @@ export default function App() {
   const moveLeft = React.useRef(false);
   const moveRight = React.useRef(false);
   const isPointerLocked = React.useRef(false);
+  const time = React.useRef(0);
+  const isMoving = React.useRef(false);
 
   const createBlock = (position: Vector3, type: number) => {
     const geometry = new BoxGeometry(1, 1, 1);
@@ -231,9 +257,21 @@ export default function App() {
     // Update position
     playerPosition.add(direction.multiplyScalar(MOVEMENT_SPEED));
     
-    // Update camera position and rotation, ensuring Z rotation is locked
+    // Update time for head bobbing
+    time.current += 0.016; // Assuming 60fps
+    
+    // Calculate head bobbing
+    const headBobY = isMoving.current ? 
+      Math.sin(time.current * HEAD_BOB_FREQUENCY) * HEAD_BOB_AMPLITUDE : 0;
+    
+    // Update camera position and rotation with head bobbing
     camera.position.copy(playerPosition);
+    camera.position.y += headBobY;
     camera.rotation.set(playerRotation.x, playerRotation.y, 0);
+    
+    // Update isMoving state
+    isMoving.current = moveForward.current || moveBackward.current || 
+                      moveLeft.current || moveRight.current;
   };
 
   const handleTouch = (event: any) => {
@@ -267,17 +305,43 @@ export default function App() {
   const handleJoystickMove = (x: number, y: number) => {
     // Convert joystick input to movement direction
     const magnitude = Math.min(1, Math.sqrt(x * x + y * y));
-    if (magnitude > 0) {
-      moveForward.current = y < 0;
-      moveBackward.current = y > 0;
-      moveLeft.current = x < 0;
-      moveRight.current = x > 0;
+    
+    // Only update movement if there's significant input
+    if (magnitude > 0.1) {
+      // Calculate movement direction based on joystick position
+      // Normalize the input values
+      const normalizedX = x / magnitude;
+      const normalizedY = y / magnitude;
+      
+      // Set movement directions based on normalized values
+      moveForward.current = normalizedY < -0.5;
+      moveBackward.current = normalizedY > 0.5;
+      moveLeft.current = normalizedX < -0.5;
+      moveRight.current = normalizedX > 0.5;
+      
+      isMoving.current = true;
     } else {
+      // Reset all movement when joystick is released or near center
       moveForward.current = false;
       moveBackward.current = false;
       moveLeft.current = false;
       moveRight.current = false;
+      isMoving.current = false;
     }
+  };
+
+  const createSkybox = () => {
+    // Create a large box for the sky
+    const skyGeometry = new BoxGeometry(1000, 1000, 1000);
+    const skyMaterial = new MeshStandardMaterial({
+      color: SKY_COLORS.TOP,
+      side: 1, // Render the inside of the box
+      transparent: true,
+      opacity: 0.8,
+    });
+    const skybox = new Mesh(skyGeometry, skyMaterial);
+    scene.add(skybox);
+    return skybox;
   };
 
   React.useEffect(() => {
@@ -305,10 +369,13 @@ export default function App() {
 
             // Create a new Scene
             scene = new Scene();
+            
+            // Add fog for depth
+            scene.fog = new Fog(SKY_COLORS.BOTTOM, 20, 100);
 
             // Create a camera
             camera = new PerspectiveCamera(
-              75,
+              70, // Slightly wider FOV for better visibility
               gl.drawingBufferWidth / gl.drawingBufferHeight,
               0.1,
               1000
@@ -326,6 +393,9 @@ export default function App() {
             directionalLight.position.set(1, 1, 1);
             scene.add(directionalLight);
 
+            // Create skybox
+            const skybox = createSkybox();
+
             // Generate terrain
             generateTerrain();
 
@@ -333,6 +403,10 @@ export default function App() {
             const render = () => {
               timeout = requestAnimationFrame(render);
               updatePlayerMovement();
+              
+              // Update skybox position to follow camera
+              skybox.position.copy(camera.position);
+              
               renderer.render(scene, camera);
               gl.endFrameEXP();
             };
